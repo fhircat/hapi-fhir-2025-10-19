@@ -37,7 +37,6 @@ import ca.uhn.fhir.util.rdf.RDFUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jena.datatypes.xsd.XSDDatatype;
 import org.apache.jena.irix.IRIs;
-import org.apache.jena.rdf.model.Literal;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.RDFNode;
 import org.apache.jena.rdf.model.Resource;
@@ -876,25 +875,33 @@ public class RDFParser extends BaseParser {
 	private <T> void parseResource(ParserState<T> parserState, String resourceType, RDFNode rootNode) {
 		// Push top-level entity
 		parserState.enteringNewElement(FHIR_NS, resourceType);
+		if (!(rootNode instanceof Resource)) {
+			throw new DataFormatException(Msg.code(1842) + "expected an RDF Resource");
+		}
 
-		if (rootNode instanceof Resource) {
-			Resource rootResource = rootNode.asResource();
-			List<Statement> statements = rootResource.listProperties().toList();
-			statements.sort(new FhirIndexStatementComparator());
-			for (Statement statement : statements) {
+		Resource rootResource = rootNode.asResource();
+		List<Statement> statements = rootResource.listProperties().toList();
+		statements.sort(new FhirIndexStatementComparator());
+		for (Statement statement : statements) {
+			RDFNode object = statement.getObject();
+			if (statement.getPredicate().getNameSpace().equals(FHIR_NS) && statement.getPredicate().getLocalName().equals(VALUE)) {
+				if (object.isLiteral()) {
+					parserState.attributeValue(VALUE, object.asLiteral().getString());
+				} else {
+					throw new DataFormatException(Msg.code(1842) + "fhir:" + VALUE + " is not a literal");
+				}
+			} else {
 				String predicateAttributeName = extractAttributeNameFromPredicate(statement);
 				if (predicateAttributeName != null) {
 					if (predicateAttributeName.equals(MODIFIER_EXTENSION)) {
-						processExtension(parserState, statement.getObject(), true);
+						processExtension(parserState, object, true);
 					} else if (predicateAttributeName.equals(EXTENSION)) {
-						processExtension(parserState, statement.getObject(), false);
+						processExtension(parserState, object, false);
 					} else {
-						processStatementObject(parserState, predicateAttributeName, statement.getObject());
+						processStatementObject(parserState, predicateAttributeName, object);
 					}
 				}
 			}
-		} else if (rootNode instanceof Literal) {
-			parserState.attributeValue(VALUE, rootNode.asLiteral().getString());
 		}
 
 		// Pop top-level entity
@@ -1003,32 +1010,28 @@ public class RDFParser extends BaseParser {
 				.asLiteral()
 				.getString();
 
+		parserState.enteringNewElementExtension(null, extensionUrl, isModifier, null);
 		List<Statement> extensionStatements = resource.listProperties().toList();
 		String extensionValueType = null;
 		RDFNode extensionValueResource = null;
 		for (Statement statement : extensionStatements) {
 			String propertyUri = statement.getPredicate().getURI();
 			if (propertyUri.contains("Extension.value")) {
+				extensionValueResource = statement.getObject().asResource();
 				extensionValueType = propertyUri.replace(FHIR_NS + "Extension.", "");
+				/* We *could* look at the type and know to expect a literal:
 				BaseRuntimeElementDefinition<?> target = getContext()
 						.getRuntimeChildUndeclaredExtensionDefinition()
 						.getChildByName(extensionValueType);
 				if (target.getChildType().equals(ID_DATATYPE)
 						|| target.getChildType().equals(PRIMITIVE_DATATYPE)) {
-					extensionValueResource = statement
-							.getObject()
-							.asResource()
-							.getProperty(resource.getModel().createProperty(FHIR_NS + VALUE))
-							.getObject()
-							.asLiteral();
-				} else {
-					extensionValueResource = statement.getObject().asResource();
+					expectFhirV = true;
 				}
-				break;
+				but that seems more like validation than parsing.
+				 */
 			}
 		}
 
-		parserState.enteringNewElementExtension(null, extensionUrl, isModifier, null);
 		// Some extensions don't have their own values - they then have more extensions inside of them
 		if (extensionValueType != null) {
 			parseResource(parserState, extensionValueType, extensionValueResource);
