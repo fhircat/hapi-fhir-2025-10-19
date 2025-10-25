@@ -291,8 +291,10 @@ public class RDFParser extends BaseParser {
 	 */
 	private Resource createFhirValueBlankNode(
 			Model rdfModel, String value, XSDDatatype xsdDataType, Integer cardinalityIndex) {
-		Resource fhirValueBlankNodeResource = rdfModel.createResource()
-				.addProperty(rdfModel.createProperty(FHIR_NS + VALUE), rdfModel.createTypedLiteral(value, xsdDataType));
+		Resource fhirValueBlankNodeResource = rdfModel.createResource();
+		if (value != null) {
+			fhirValueBlankNodeResource.addProperty(rdfModel.createProperty(FHIR_NS + VALUE), rdfModel.createTypedLiteral(value, xsdDataType));
+		}
 
 		if (cardinalityIndex != null && cardinalityIndex > -1) {
 			fhirValueBlankNodeResource.addProperty(
@@ -399,10 +401,10 @@ public class RDFParser extends BaseParser {
 					assert pd != null;
 					String value = pd.getValueAsString();
 					if (value != null || !hasNoExtensions(pd)) {
-						if (value != null) {
+						if (true) {
 							String propertyName =
 									constructPredicateName(resource, childDefinition, childName, parentElement);
-							XSDDatatype dataType = getXSDDataTypeForFhirType(pd.fhirType(), value);
+							XSDDatatype dataType = (value == null) ? null : getXSDDataTypeForFhirType(pd.fhirType(), value);
 							Resource valueResource =
 									this.createFhirValueBlankNode(rdfModel, value, dataType, cardinalityIndex);
 							if (!hasNoExtensions(pd)) {
@@ -414,9 +416,11 @@ public class RDFParser extends BaseParser {
 										RuntimeResourceDefinition resDef =
 												getContext().getResourceDefinition(resource);
 										Resource extensionResource = rdfModel.createResource();
-										extensionResource.addProperty(
+										if (value != null) {
+											extensionResource.addProperty(
 												rdfModel.createProperty(FHIR_NS + FHIR_INDEX),
 												rdfModel.createTypedLiteral(i, XSDDatatype.XSDinteger));
+										}
 										valueResource.addProperty(
 												rdfModel.createProperty(FHIR_NS + ELEMENT_EXTENSION),
 												extensionResource);
