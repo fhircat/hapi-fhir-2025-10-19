@@ -617,7 +617,7 @@ public class RDFParser extends BaseParser {
 
 	private Model encodeCompositeElementToStreamWriter(
 			final IBaseResource resource,
-			final IBase element,
+			final IBase theElement,
 			Model rdfModel,
 			Resource rdfResource,
 			final boolean containedResource,
@@ -625,7 +625,7 @@ public class RDFParser extends BaseParser {
 			final EncodeContext encodeContext) {
 
 		for (CompositeChildElement nextChildElem :
-				super.compositeChildIterator(element, containedResource, parent, encodeContext)) {
+				super.compositeChildIterator(theElement, containedResource, parent, encodeContext)) {
 
 			BaseRuntimeChildDefinition nextChild = nextChildElem.getDef();
 
@@ -649,14 +649,14 @@ public class RDFParser extends BaseParser {
 						// This is where we populate the parent of the narrative
 						Resource childResource = rdfModel.createResource();
 
-						String propertyName = constructPredicateName(resource, child, child.getElementName(), element);
+						String propertyName = constructPredicateName(resource, child, child.getElementName(), theElement);
 						rdfResource.addProperty(rdfModel.createProperty(propertyName), childResource);
 
 						String childName = nextChild.getChildNameByDatatype(child.getDatatype());
 						BaseRuntimeElementDefinition<?> type = child.getChildByName(childName);
 						rdfModel = encodeChildElementToStreamWriter(
 								resource,
-								element,
+								theElement,
 								rdfModel,
 								childResource,
 								nextChild,
@@ -674,7 +674,7 @@ public class RDFParser extends BaseParser {
 
 			if (nextChild instanceof RuntimeChildDirectResource) {
 
-				List<? extends IBase> values = nextChild.getAccessor().getValues(element);
+				List<? extends IBase> values = nextChild.getAccessor().getValues(theElement);
 				if (values == null || values.isEmpty()) {
 					continue;
 				}
@@ -689,19 +689,19 @@ public class RDFParser extends BaseParser {
 						encodeContext,
 						false,
 						null);
-				String propertyName = constructPredicateName(resource, nextChild, nextChild.getElementName(), element);
+				String propertyName = constructPredicateName(resource, nextChild, nextChild.getElementName(), theElement);
 				rdfResource.addProperty(rdfModel.createProperty(propertyName), childResource);
 
 				continue;
 			}
 
 			if (nextChild instanceof RuntimeChildContainedResources) {
-				List<? extends IBase> values = nextChild.getAccessor().getValues(element);
+				List<? extends IBase> values = nextChild.getAccessor().getValues(theElement);
 				int i = 0;
 				for (IBase containedResourceEntity : values) {
 					rdfModel = encodeChildElementToStreamWriter(
 							resource,
-							element,
+							theElement,
 							rdfModel,
 							rdfResource,
 							nextChild,
@@ -716,7 +716,7 @@ public class RDFParser extends BaseParser {
 				}
 			} else {
 
-				List<? extends IBase> values = nextChild.getAccessor().getValues(element);
+				List<? extends IBase> values = nextChild.getAccessor().getValues(theElement);
 				values = super.preProcessValues(nextChild, resource, values, nextChildElem, encodeContext);
 
 				if (values == null || values.isEmpty()) {
@@ -740,11 +740,11 @@ public class RDFParser extends BaseParser {
 						continue;
 					}
 
-					String childName = childNameAndDef.getChildName();
+					String nextChildSpecificName = childNameAndDef.getChildName();
 					BaseRuntimeElementDefinition<?> childDef = childNameAndDef.getChildDef();
 					String extensionUrl = getExtensionUrl(nextChild.getExtensionUrl());
 
-					if (extensionUrl != null && !childName.equals(EXTENSION)) {
+					if (extensionUrl != null && !nextChildSpecificName.equals(EXTENSION)) {
 						rdfModel = encodeExtension(
 								resource,
 								rdfModel,
@@ -753,7 +753,7 @@ public class RDFParser extends BaseParser {
 								nextChildElem,
 								nextChild,
 								nextValue,
-								childName,
+								nextChildSpecificName,
 								childDef,
 								encodeContext,
 								cardinalityIndex);
@@ -773,7 +773,7 @@ public class RDFParser extends BaseParser {
 								nextChildElem,
 								nextChild,
 								nextValue,
-								childName,
+								nextChildSpecificName,
 								childDef,
 								encodeContext,
 								cardinalityIndex);
@@ -787,7 +787,7 @@ public class RDFParser extends BaseParser {
 								&& childDef.getChildType() != ID_DATATYPE) {
 							Resource childResource = rdfModel.createResource();
 
-							String propertyName = constructPredicateName(resource, nextChild, childName, nextValue);
+							String propertyName = constructPredicateName(resource, nextChild, nextChildSpecificName, nextValue);
 							rdfResource.addProperty(rdfModel.createProperty(propertyName), childResource);
 							if (cardinalityIndex != null && cardinalityIndex > -1) {
 								childResource.addProperty(
@@ -797,12 +797,12 @@ public class RDFParser extends BaseParser {
 							}
 							rdfModel = encodeChildElementToStreamWriter(
 									resource,
-									element,
+									theElement,
 									rdfModel,
 									childResource,
 									nextChild,
 									nextValue,
-									childName,
+									nextChildSpecificName,
 									childDef,
 									containedResource,
 									nextChildElem,
@@ -811,12 +811,12 @@ public class RDFParser extends BaseParser {
 						} else {
 							rdfModel = encodeChildElementToStreamWriter(
 									resource,
-									element,
+									theElement,
 									rdfModel,
 									rdfResource,
 									nextChild,
 									nextValue,
-									childName,
+									nextChildSpecificName,
 									childDef,
 									containedResource,
 									nextChildElem,
