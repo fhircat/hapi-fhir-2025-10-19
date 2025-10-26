@@ -1017,13 +1017,15 @@ public class RDFParser extends BaseParser {
 		parserState.enteringNewElementExtension(null, extensionUrl, isModifier, null);
 		List<Statement> extensionStatements = resource.listProperties().toList();
 		extensionStatements.sort(new FhirIndexStatementComparator());
-		String extensionValueType = null;
-		RDFNode extensionValueResource = null;
 		for (Statement statement : extensionStatements) {
-			String propertyUri = statement.getPredicate().getURI();
-			if (propertyUri.contains("Extension.value")) {
-				extensionValueResource = statement.getObject().asResource();
-				extensionValueType = propertyUri.replace(FHIR_NS + "Extension.", "");
+			String predicateAttributeName = extractAttributeNameFromPredicate(statement); // null if ignored predicate
+			if ("url".equals(predicateAttributeName) || predicateAttributeName == null) {
+				continue;
+			} else if (predicateAttributeName.equals(EXTENSION)) {
+				processExtension(parserState, statement.getObject(), false);
+			} else if (predicateAttributeName.equals(MODIFIER_EXTENSION)) {
+				processExtension(parserState, statement.getObject(), true);
+			} else {
 				/* We *could* look at the type and know to expect a literal:
 				BaseRuntimeElementDefinition<?> target = getContext()
 						.getRuntimeChildUndeclaredExtensionDefinition()
@@ -1034,21 +1036,10 @@ public class RDFParser extends BaseParser {
 				}
 				but that seems more like validation than parsing.
 				 */
+				// parseResource or processStatementObject both work. Which is better?
+				parseResource(parserState, predicateAttributeName, statement.getObject().asResource());
 			}
 		}
-
-		// Some extensions don't have their own values - they then have more extensions inside of them
-		if (extensionValueType != null) {
-			parseResource(parserState, extensionValueType, extensionValueResource);
-		}
-
-		for (Statement statement : extensionStatements) {
-			String propertyUri = statement.getPredicate().getURI();
-			if (propertyUri.equals(FHIR_NS + ELEMENT_EXTENSION)) {
-				processExtension(parserState, statement.getObject(), false);
-			}
-		}
-
 		parserState.endingElement();
 	}
 
