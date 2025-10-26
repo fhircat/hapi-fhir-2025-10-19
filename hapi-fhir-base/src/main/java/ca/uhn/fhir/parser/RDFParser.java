@@ -1016,6 +1016,7 @@ public class RDFParser extends BaseParser {
 
 		parserState.enteringNewElementExtension(null, extensionUrl, isModifier, null);
 		List<Statement> extensionStatements = resource.listProperties().toList();
+		extensionStatements.sort(new FhirIndexStatementComparator());
 		String extensionValueType = null;
 		RDFNode extensionValueResource = null;
 		for (Statement statement : extensionStatements) {
