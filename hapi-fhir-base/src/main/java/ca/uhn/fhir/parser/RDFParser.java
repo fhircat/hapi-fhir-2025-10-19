@@ -781,7 +781,7 @@ public class RDFParser extends BaseParser {
 								childDef,
 								encodeContext,
 								cardinalityIndex);
-					} else if (!(nextChild instanceof RuntimeChildNarrativeDefinition) || !containedResource) {
+					} else if (true || !(nextChild instanceof RuntimeChildNarrativeDefinition) || !containedResource) {
 
 						// If the child is not a value type, create a child object (blank node) for subordinate
 						// predicates to be attached to
