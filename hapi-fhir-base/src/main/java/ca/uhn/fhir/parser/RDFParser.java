@@ -38,6 +38,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.jena.datatypes.xsd.XSDDatatype;
 import org.apache.jena.irix.IRIs;
 import org.apache.jena.rdf.model.Model;
+import org.apache.jena.rdf.model.Property;
 import org.apache.jena.rdf.model.RDFNode;
 import org.apache.jena.rdf.model.Resource;
 import org.apache.jena.rdf.model.Statement;
@@ -244,19 +245,19 @@ public class RDFParser extends BaseParser {
 			}
 		}
 
-		parentResource.addProperty(RDF.type, theJenaModel.createProperty(FHIR_NS + resDef.getName()));
+		parentResource.addProperty(RDF.type, constructFhirPredicate(resDef.getName()));
 
 		// Only the top-level resource should have the nodeRole set to treeRoot
 		if (rootResource) {
 			parentResource.addProperty(
-					theJenaModel.createProperty(FHIR_NS + NODE_ROLE), theJenaModel.createProperty(FHIR_NS + TREE_ROOT));
+					constructFhirPredicate(NODE_ROLE), constructFhirPredicate(TREE_ROOT));
 		}
 
 		if (resourceId != null
 				&& resourceId.getIdPart() != null
 				&& !resourceId.getValue().startsWith("urn:")) {
 			parentResource.addProperty(
-					theJenaModel.createProperty(FHIR_NS + RESOURCE_ID),
+					constructFhirPredicate(RESOURCE_ID),
 					createFhirValueBlankNode(resourceId.getIdPart()));
 		}
 
@@ -292,12 +293,12 @@ public class RDFParser extends BaseParser {
 			String value, XSDDatatype xsdDataType, Integer cardinalityIndex) {
 		Resource fhirValueBlankNodeResource = theJenaModel.createResource();
 		if (value != null) {
-			fhirValueBlankNodeResource.addProperty(theJenaModel.createProperty(FHIR_NS + VALUE), theJenaModel.createTypedLiteral(value, xsdDataType));
+			fhirValueBlankNodeResource.addProperty(constructFhirPredicate(VALUE), theJenaModel.createTypedLiteral(value, xsdDataType));
 		}
 
 		if (cardinalityIndex != null && cardinalityIndex > -1) {
 			fhirValueBlankNodeResource.addProperty(
-					theJenaModel.createProperty(FHIR_NS + FHIR_INDEX),
+					constructFhirPredicate(FHIR_INDEX),
 					theJenaModel.createTypedLiteral(cardinalityIndex, XSDDatatype.XSDinteger));
 		}
 		return fhirValueBlankNodeResource;
@@ -305,19 +306,27 @@ public class RDFParser extends BaseParser {
 
 	/**
 	 * Builds the predicate name based on field definition
-	 * @param resource Resource being interrogated
-	 * @param definition field definition
-	 * @param childName childName which been massaged for different data types
-	 * @return String of predicate name
+	 *
+	 * @param childName  childName which been massaged for different data types
+	 * @return Property  Jena Property for the passed predicate name
 	 */
-	private String constructPredicateName(
-			IBaseResource resource, BaseRuntimeChildDefinition definition, String childName, IBase parentElement) {
-		String basePropertyName = FHIR_NS + resource.fhirType() + "." + childName;
-		String classBasedPropertyName;
+	private Property constructFhirPredicate(String localName) {
+		return theJenaModel.createProperty(FHIR_NS + localName);
+	}
 
-		if (definition instanceof BaseRuntimeDeclaredChildDefinition) {
-			BaseRuntimeDeclaredChildDefinition declaredDef = (BaseRuntimeDeclaredChildDefinition) definition;
-			Class declaringClass = declaredDef.getField().getDeclaringClass();
+	/**
+	 * Builds the predicate name based on field definition
+	 *
+	 * @param resource   Resource being interrogated
+	 * @param definition field definition
+	 * @param childName  childName which been massaged for different data types
+	 * @return Property  Jena Property for the constructed predicate name
+	 */
+	private Property constructPredicate(
+			IBaseResource resource, BaseRuntimeChildDefinition definition, String childName) {
+
+		if (definition instanceof BaseRuntimeDeclaredChildDefinition declaredDef) {
+			Class<?> declaringClass = declaredDef.getField().getDeclaringClass();
 			if (declaringClass != resource.getClass()) {
 				String property = null;
 				if (IBaseBackboneElement.class.isAssignableFrom(declaringClass)
@@ -342,11 +351,10 @@ public class RDFParser extends BaseParser {
 						property = declaredDef.getField().getDeclaringClass().getSimpleName();
 					}
 				}
-				classBasedPropertyName = FHIR_NS + property + "." + childName;
-				return classBasedPropertyName;
+				return constructFhirPredicate(property + "." + childName);
 			}
 		}
-		return basePropertyName;
+		return constructFhirPredicate(resource.fhirType() + "." + childName);
 	}
 
 	private void encodeChildElementToStreamWriter(
@@ -396,12 +404,12 @@ public class RDFParser extends BaseParser {
 					if (StringUtils.isNotBlank(encodedValue) || !hasNoExtensions(value)) {
 						if (StringUtils.isNotBlank(encodedValue)) {
 
-							String propertyName =
-									constructPredicateName(resource, childDefinition, childName, parentElement);
+							Property property =
+									constructPredicate(resource, childDefinition, childName);
 							if (element != null) {
 								XSDDatatype dataType = getXSDDataTypeForFhirType(element.fhirType(), encodedValue);
 								rdfResource.addProperty(
-										theJenaModel.createProperty(propertyName),
+										property,
 										this.createFhirValueBlankNode(
 											encodedValue, dataType, cardinalityIndex));
 							}
@@ -414,14 +422,14 @@ public class RDFParser extends BaseParser {
 					assert pd != null;
 					String value = pd.getValueAsString();
 					if (value != null || !hasNoExtensions(pd)) {
-						String propertyName =
-								constructPredicateName(resource, childDefinition, childName, parentElement);
+						Property property =
+								constructPredicate(resource, childDefinition, childName);
 						XSDDatatype dataType = (value == null) ? null : getXSDDataTypeForFhirType(pd.fhirType(), value);
 						Resource valueResource =
 								this.createFhirValueBlankNode(value, dataType, cardinalityIndex);
 						if (idString != null) {
 							valueResource.addProperty(
-								theJenaModel.createProperty(FHIR_NS + idPredicate), createFhirValueBlankNode(idString));
+								constructFhirPredicate(idPredicate), createFhirValueBlankNode(idString));
 						}
 						if (!hasNoExtensions(pd)) {
 							IBaseHasExtensions hasExtension = (IBaseHasExtensions) pd;
@@ -434,11 +442,11 @@ public class RDFParser extends BaseParser {
 									Resource extensionResource = theJenaModel.createResource();
 									if (value != null) {
 										extensionResource.addProperty(
-											theJenaModel.createProperty(FHIR_NS + FHIR_INDEX),
+											constructFhirPredicate(FHIR_INDEX),
 											theJenaModel.createTypedLiteral(i, XSDDatatype.XSDinteger));
 									}
 									valueResource.addProperty(
-											theJenaModel.createProperty(FHIR_NS + ELEMENT_EXTENSION),
+											constructFhirPredicate(ELEMENT_EXTENSION),
 											extensionResource);
 									encodeCompositeElementToStreamWriter(
 											resource,
@@ -451,7 +459,7 @@ public class RDFParser extends BaseParser {
 							}
 						}
 
-						rdfResource.addProperty(theJenaModel.createProperty(propertyName), valueResource);
+						rdfResource.addProperty(property, valueResource);
 					}
 					break;
 				}
@@ -459,7 +467,7 @@ public class RDFParser extends BaseParser {
 				case COMPOSITE_DATATYPE: {
 					if (idString != null) {
 						rdfResource.addProperty(
-								theJenaModel.createProperty(FHIR_NS + idPredicate), createFhirValueBlankNode(idString));
+								constructFhirPredicate(idPredicate), createFhirValueBlankNode(idString));
 					}
 					encodeCompositeElementToStreamWriter(
 							resource, element, rdfResource, includedResource, parent, theEncodeContext);
@@ -471,10 +479,10 @@ public class RDFParser extends BaseParser {
 						IIdType resourceId = ((IBaseResource) element).getIdElement();
 						Resource containedResource = theJenaModel.createResource();
 						rdfResource.addProperty(
-								theJenaModel.createProperty(FHIR_NS + DOMAIN_RESOURCE_CONTAINED), containedResource);
+								constructFhirPredicate(DOMAIN_RESOURCE_CONTAINED), containedResource);
 						if (cardinalityIndex != null) {
 							containedResource.addProperty(
-									theJenaModel.createProperty(FHIR_NS + FHIR_INDEX),
+									constructFhirPredicate(FHIR_INDEX),
 									cardinalityIndex.toString(),
 									XSDDatatype.XSDinteger);
 						}
@@ -506,9 +514,9 @@ public class RDFParser extends BaseParser {
 					IBaseXhtml xHtmlNode = (IBaseXhtml) element;
 					if (xHtmlNode != null) {
 						String value = xHtmlNode.getValueAsString();
-						String propertyName =
-								constructPredicateName(resource, childDefinition, childName, parentElement);
-						rdfResource.addProperty(theJenaModel.createProperty(propertyName), value);
+						Property property =
+								constructPredicate(resource, childDefinition, childName);
+						rdfResource.addProperty(property, value);
 					}
 					break;
 				}
@@ -591,11 +599,11 @@ public class RDFParser extends BaseParser {
 		BaseRuntimeDeclaredChildDefinition extDef = (BaseRuntimeDeclaredChildDefinition) nextChild;
 
 		Resource childResource = theJenaModel.createResource();
-		String extensionPredicateName = constructPredicateName(resource, extDef, extDef.getElementName(), null);
-		rdfResource.addProperty(theJenaModel.createProperty(extensionPredicateName), childResource);
+		Property extensionProperty = constructPredicate(resource, extDef, extDef.getElementName());
+		rdfResource.addProperty(extensionProperty, childResource);
 		if (cardinalityIndex != null && cardinalityIndex > -1) {
 			childResource.addProperty(
-					theJenaModel.createProperty(FHIR_NS + FHIR_INDEX), cardinalityIndex.toString(), XSDDatatype.XSDinteger);
+					constructFhirPredicate(FHIR_INDEX), cardinalityIndex.toString(), XSDDatatype.XSDinteger);
 		}
 
 		encodeChildElementToStreamWriter(
@@ -645,8 +653,8 @@ public class RDFParser extends BaseParser {
 						// This is where we populate the parent of the narrative
 						Resource childResource = theJenaModel.createResource();
 
-						String propertyName = constructPredicateName(resource, child, child.getElementName(), theElement);
-						rdfResource.addProperty(theJenaModel.createProperty(propertyName), childResource);
+						Property property = constructPredicate(resource, child, child.getElementName());
+						rdfResource.addProperty(property, childResource);
 
 						String childName = nextChild.getChildNameByDatatype(child.getDatatype());
 						BaseRuntimeElementDefinition<?> type = child.getChildByName(childName);
@@ -683,8 +691,8 @@ public class RDFParser extends BaseParser {
 						encodeContext,
 						false,
 						null);
-				String propertyName = constructPredicateName(resource, nextChild, nextChild.getElementName(), theElement);
-				rdfResource.addProperty(theJenaModel.createProperty(propertyName), childResource);
+				Property property = constructPredicate(resource, nextChild, nextChild.getElementName());
+				rdfResource.addProperty(property, childResource);
 
 				continue;
 			}
@@ -778,11 +786,11 @@ public class RDFParser extends BaseParser {
 								&& childDef.getChildType() != ID_DATATYPE) {
 							Resource childResource = theJenaModel.createResource();
 
-							String propertyName = constructPredicateName(resource, nextChild, nextChildSpecificName, nextValue);
-							rdfResource.addProperty(theJenaModel.createProperty(propertyName), childResource);
+							Property property = constructPredicate(resource, nextChild, nextChildSpecificName);
+							rdfResource.addProperty(property, childResource);
 							if (cardinalityIndex != null && cardinalityIndex > -1) {
 								childResource.addProperty(
-										theJenaModel.createProperty(FHIR_NS + FHIR_INDEX),
+										constructFhirPredicate(FHIR_INDEX),
 										cardinalityIndex.toString(),
 										XSDDatatype.XSDinteger);
 							}
@@ -1006,10 +1014,10 @@ public class RDFParser extends BaseParser {
 	private <T> void processExtension(ParserState<T> parserState, RDFNode statementObject, boolean isModifier) {
 		logger.trace("Entering processExtension with state: {}", parserState);
 		Resource resource = statementObject.asResource();
-		Statement urlProperty = resource.getProperty(theJenaModel.createProperty(FHIR_NS + EXTENSION_URL));
+		Statement urlProperty = resource.getProperty(constructFhirPredicate(EXTENSION_URL));
 		Resource urlPropertyResource = urlProperty.getObject().asResource();
 		String extensionUrl = urlPropertyResource
-				.getProperty(theJenaModel.createProperty(FHIR_NS + VALUE))
+				.getProperty(constructFhirPredicate(VALUE))
 				.getObject()
 				.asLiteral()
 				.getString();
