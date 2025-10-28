@@ -375,6 +375,21 @@ public class RDFParser extends BaseParser {
 				}
 			}
 
+			String idString = null;
+			String idPredicate = null;
+			if (element instanceof IBaseResource) {
+				idPredicate = FHIR_NS + RESOURCE_ID;
+				IIdType resourceId = processResourceID((IBaseResource) element, theEncodeContext);
+				if (resourceId != null) {
+					idString = resourceId.getIdPart();
+				}
+			} else if (element instanceof IBaseElement) {
+				idPredicate = FHIR_NS + ELEMENT_ID;
+				if (((IBaseElement) element).getId() != null) {
+					idString = ((IBaseElement) element).getId();
+				}
+			}
+
 			switch (childDef.getChildType()) {
 				case ID_DATATYPE: {
 					IIdType value = (IIdType) element;
@@ -407,6 +422,10 @@ public class RDFParser extends BaseParser {
 							XSDDatatype dataType = (value == null) ? null : getXSDDataTypeForFhirType(pd.fhirType(), value);
 							Resource valueResource =
 									this.createFhirValueBlankNode(rdfModel, value, dataType, cardinalityIndex);
+							if (idString != null) {
+								valueResource.addProperty(
+									rdfModel.createProperty(idPredicate), createFhirValueBlankNode(rdfModel, idString));
+							}
 							if (!hasNoExtensions(pd)) {
 								IBaseHasExtensions hasExtension = (IBaseHasExtensions) pd;
 								if (hasExtension.getExtension() != null
@@ -443,20 +462,6 @@ public class RDFParser extends BaseParser {
 				}
 				case RESOURCE_BLOCK:
 				case COMPOSITE_DATATYPE: {
-					String idString = null;
-					String idPredicate = null;
-					if (element instanceof IBaseResource) {
-						idPredicate = FHIR_NS + RESOURCE_ID;
-						IIdType resourceId = processResourceID((IBaseResource) element, theEncodeContext);
-						if (resourceId != null) {
-							idString = resourceId.getIdPart();
-						}
-					} else if (element instanceof IBaseElement) {
-						idPredicate = FHIR_NS + ELEMENT_ID;
-						if (((IBaseElement) element).getId() != null) {
-							idString = ((IBaseElement) element).getId();
-						}
-					}
 					if (idString != null) {
 						rdfResource.addProperty(
 								rdfModel.createProperty(idPredicate), createFhirValueBlankNode(rdfModel, idString));
@@ -566,7 +571,7 @@ public class RDFParser extends BaseParser {
 
 		if (StringUtils.isNotBlank(resource.getIdElement().getIdPart())) {
 			resourceId = resource.getIdElement();
-			if (resource.getIdElement().getValue().startsWith("urn:")) {
+			if (resource.getIdElement().getValue().startsWith("urn:")) { // TODO: does this still make sense?
 				resourceId = null;
 			}
 		}
@@ -781,7 +786,7 @@ public class RDFParser extends BaseParser {
 								childDef,
 								encodeContext,
 								cardinalityIndex);
-					} else if (true || !(nextChild instanceof RuntimeChildNarrativeDefinition) || !containedResource) {
+					} else if (true || !(nextChild instanceof RuntimeChildNarrativeDefinition) || !containedResource) { // TODO
 
 						// If the child is not a value type, create a child object (blank node) for subordinate
 						// predicates to be attached to
@@ -977,6 +982,23 @@ public class RDFParser extends BaseParser {
 								processExtension(parserState, objectProperty.getObject(), false);
 							} else if (predicateAttributeName.equals(MODIFIER_EXTENSION)) {
 								processExtension(parserState, objectProperty.getObject(), true);
+							/*
+							Here I was trying to emulate JsonParser.parseAlternates's special treatment for ids.
+							This occurs *only* in Alternates and I can only confirm to be tested on alternates of a primitive datatype.
+							json-edge-cases has a contact.name:
+								{ "given": [ "Bénédicte", "Denise", "Marie" ],
+								  "_given": [ null, { "id": "a3", "extension": [ … ] }, null ] }
+							This fails with other ids, e.g. a contained of:
+								[ { "resourceType": "CareTeam", "id": "careteam" } ]
+							} else if ("id".equals(predicateAttributeName)) {
+								RDFNode valueNode =
+									objectProperty.getObject().asResource().getProperty(statementObject.asResource().getModel().createProperty(FHIR_NS + VALUE)).getObject();
+								if (valueNode.isLiteral()) {
+									parserState.attributeValue("id", valueNode.asLiteral().getString());
+								} else {
+									getErrorHandler() // .incorrect???Type
+								}
+							*/
 							} else {
 								processStatementObject(parserState, predicateAttributeName, objectProperty.getObject());
 							}
