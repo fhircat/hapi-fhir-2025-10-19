@@ -113,6 +113,7 @@ public class RDFParser extends BaseParser {
 	private final Map<Class, String> classToFhirTypeMap = new HashMap<>();
 
 	private final Lang lang;
+	private Model theJenaModel;
 
 	/**
 	 * Do not use this constructor, the recommended way to obtain a new instance of the RDF parser is to invoke
@@ -123,6 +124,7 @@ public class RDFParser extends BaseParser {
 	public RDFParser(final FhirContext context, final IParserErrorHandler parserErrorHandler, final Lang lang) {
 		super(context, parserErrorHandler);
 		this.lang = lang;
+		this.theJenaModel = null;
 	}
 
 	@Override
@@ -144,7 +146,7 @@ public class RDFParser extends BaseParser {
 	@Override
 	protected void doEncodeResourceToWriter(
 			final IBaseResource resource, final Writer writer, final EncodeContext encodeContext) {
-		Model rdfModel = RDFUtil.initializeRDFModel();
+		theJenaModel = RDFUtil.initializeRDFModel();
 
 		// Establish the namespaces and prefixes needed
 		HashMap<String, String> prefixes = new HashMap<>();
@@ -155,15 +157,15 @@ public class RDFParser extends BaseParser {
 		prefixes.put(SCT_PREFIX, SCT_NS);
 
 		for (String key : prefixes.keySet()) {
-			rdfModel.setNsPrefix(key, prefixes.get(key));
+			theJenaModel.setNsPrefix(key, prefixes.get(key));
 		}
 
 		IIdType resourceId = processResourceID(resource, encodeContext);
 
-		encodeResourceToRDFStreamWriter(resource, rdfModel, false, resourceId, encodeContext, true, null);
+		encodeResourceToRDFStreamWriter(resource, false, resourceId, encodeContext, true, null);
 
 		try {
-			RDFUtil.writeRDFModel(writer, rdfModel, lang);
+			RDFUtil.writeRDFModel(writer, theJenaModel, lang);
 		} catch (Exception e) {
 			throw new DataFormatException(Msg.code(2618) + "Error writing RDF model to writer", e);
 		}
@@ -181,18 +183,16 @@ public class RDFParser extends BaseParser {
 	protected <T extends IBaseResource> T doParseResource(final Class<T> resourceType, final Reader reader)
 			throws DataFormatException {
 
-		Model model = null;
 		try {
-			model = RDFUtil.readRDFToModel(reader, this.lang);
+			theJenaModel = RDFUtil.readRDFToModel(reader, this.lang);
 		} catch (Exception e) {
 			throw new DataFormatException(Msg.code(2619) + "Error reading RDF model from reader", e);
 		}
-		return parseResource(resourceType, model);
+		return parseResource(resourceType);
 	}
 
 	private Resource encodeResourceToRDFStreamWriter(
 			final IBaseResource resource,
-			final Model rdfModel,
 			final boolean containedResource,
 			final IIdType resourceId,
 			final EncodeContext encodeContext,
@@ -227,13 +227,13 @@ public class RDFParser extends BaseParser {
 
 		if (parentResource == null) {
 			if (!resource.getIdElement().toUnqualified().hasIdPart()) {
-				parentResource = rdfModel.getResource((String) null);
+				parentResource = theJenaModel.getResource((String) null);
 			} else {
 
 				String resourceUri = IRIs.resolve(
 								uriBase, resource.getIdElement().toUnqualified().toString())
 						.toString();
-				parentResource = rdfModel.getResource(resourceUri);
+				parentResource = theJenaModel.getResource(resourceUri);
 			}
 			// If the resource already exists and has statements, return that existing resource.
 			if (parentResource != null
@@ -244,26 +244,25 @@ public class RDFParser extends BaseParser {
 			}
 		}
 
-		parentResource.addProperty(RDF.type, rdfModel.createProperty(FHIR_NS + resDef.getName()));
+		parentResource.addProperty(RDF.type, theJenaModel.createProperty(FHIR_NS + resDef.getName()));
 
 		// Only the top-level resource should have the nodeRole set to treeRoot
 		if (rootResource) {
 			parentResource.addProperty(
-					rdfModel.createProperty(FHIR_NS + NODE_ROLE), rdfModel.createProperty(FHIR_NS + TREE_ROOT));
+					theJenaModel.createProperty(FHIR_NS + NODE_ROLE), theJenaModel.createProperty(FHIR_NS + TREE_ROOT));
 		}
 
 		if (resourceId != null
 				&& resourceId.getIdPart() != null
 				&& !resourceId.getValue().startsWith("urn:")) {
 			parentResource.addProperty(
-					rdfModel.createProperty(FHIR_NS + RESOURCE_ID),
-					createFhirValueBlankNode(rdfModel, resourceId.getIdPart()));
+					theJenaModel.createProperty(FHIR_NS + RESOURCE_ID),
+					createFhirValueBlankNode(resourceId.getIdPart()));
 		}
 
 		encodeCompositeElementToStreamWriter(
 				resource,
 				resource,
-				rdfModel,
 				parentResource,
 				containedResource,
 				new CompositeChildElement(resDef, encodeContext),
@@ -274,32 +273,32 @@ public class RDFParser extends BaseParser {
 
 	/**
 	 * Utility method to create a blank node with a fhir:value predicate
-	 * @param rdfModel Model to create node within
+	 *
 	 * @param value value object - assumed to be xsd:string
 	 * @return Blank node resource containing fhir:value
 	 */
-	private Resource createFhirValueBlankNode(Model rdfModel, String value) {
-		return createFhirValueBlankNode(rdfModel, value, XSDDatatype.XSDstring, null);
+	private Resource createFhirValueBlankNode(String value) {
+		return createFhirValueBlankNode(value, XSDDatatype.XSDstring, null);
 	}
 	/**
 	 * Utility method to create a blank node with a fhir:value predicate accepting a specific data type and index
-	 * @param rdfModel Model to create node within
-	 * @param value value object
-	 * @param xsdDataType data type for value
+	 *
+	 * @param value            value object
+	 * @param xsdDataType      data type for value
 	 * @param cardinalityIndex if a collection, this value is written as a fhir:index predicate
 	 * @return Blank node resource containing fhir:value (and possibly fhir:index)
 	 */
 	private Resource createFhirValueBlankNode(
-			Model rdfModel, String value, XSDDatatype xsdDataType, Integer cardinalityIndex) {
-		Resource fhirValueBlankNodeResource = rdfModel.createResource();
+			String value, XSDDatatype xsdDataType, Integer cardinalityIndex) {
+		Resource fhirValueBlankNodeResource = theJenaModel.createResource();
 		if (value != null) {
-			fhirValueBlankNodeResource.addProperty(rdfModel.createProperty(FHIR_NS + VALUE), rdfModel.createTypedLiteral(value, xsdDataType));
+			fhirValueBlankNodeResource.addProperty(theJenaModel.createProperty(FHIR_NS + VALUE), theJenaModel.createTypedLiteral(value, xsdDataType));
 		}
 
 		if (cardinalityIndex != null && cardinalityIndex > -1) {
 			fhirValueBlankNodeResource.addProperty(
-					rdfModel.createProperty(FHIR_NS + FHIR_INDEX),
-					rdfModel.createTypedLiteral(cardinalityIndex, XSDDatatype.XSDinteger));
+					theJenaModel.createProperty(FHIR_NS + FHIR_INDEX),
+					theJenaModel.createTypedLiteral(cardinalityIndex, XSDDatatype.XSDinteger));
 		}
 		return fhirValueBlankNodeResource;
 	}
@@ -350,10 +349,9 @@ public class RDFParser extends BaseParser {
 		return basePropertyName;
 	}
 
-	private Model encodeChildElementToStreamWriter(
+	private void encodeChildElementToStreamWriter(
 			final IBaseResource resource,
 			IBase parentElement,
-			Model rdfModel,
 			Resource rdfResource,
 			final BaseRuntimeChildDefinition childDefinition,
 			final IBase element,
@@ -371,20 +369,20 @@ public class RDFParser extends BaseParser {
 
 			if (element == null || element.isEmpty()) {
 				if (!isChildContained(childDef, includedResource, theEncodeContext)) {
-					return rdfModel;
+					return;
 				}
 			}
 
 			String idString = null;
 			String idPredicate = null;
 			if (element instanceof IBaseResource) {
-				idPredicate = FHIR_NS + RESOURCE_ID;
+				idPredicate = RESOURCE_ID;
 				IIdType resourceId = processResourceID((IBaseResource) element, theEncodeContext);
 				if (resourceId != null) {
 					idString = resourceId.getIdPart();
 				}
 			} else if (element instanceof IBaseElement) {
-				idPredicate = FHIR_NS + ELEMENT_ID;
+				idPredicate = ELEMENT_ID;
 				if (((IBaseElement) element).getId() != null) {
 					idString = ((IBaseElement) element).getId();
 				}
@@ -403,9 +401,9 @@ public class RDFParser extends BaseParser {
 							if (element != null) {
 								XSDDatatype dataType = getXSDDataTypeForFhirType(element.fhirType(), encodedValue);
 								rdfResource.addProperty(
-										rdfModel.createProperty(propertyName),
+										theJenaModel.createProperty(propertyName),
 										this.createFhirValueBlankNode(
-												rdfModel, encodedValue, dataType, cardinalityIndex));
+											encodedValue, dataType, cardinalityIndex));
 							}
 						}
 					}
@@ -420,10 +418,10 @@ public class RDFParser extends BaseParser {
 								constructPredicateName(resource, childDefinition, childName, parentElement);
 						XSDDatatype dataType = (value == null) ? null : getXSDDataTypeForFhirType(pd.fhirType(), value);
 						Resource valueResource =
-								this.createFhirValueBlankNode(rdfModel, value, dataType, cardinalityIndex);
+								this.createFhirValueBlankNode(value, dataType, cardinalityIndex);
 						if (idString != null) {
 							valueResource.addProperty(
-								rdfModel.createProperty(idPredicate), createFhirValueBlankNode(rdfModel, idString));
+								theJenaModel.createProperty(FHIR_NS + idPredicate), createFhirValueBlankNode(idString));
 						}
 						if (!hasNoExtensions(pd)) {
 							IBaseHasExtensions hasExtension = (IBaseHasExtensions) pd;
@@ -433,20 +431,19 @@ public class RDFParser extends BaseParser {
 								for (IBaseExtension extension : hasExtension.getExtension()) {
 									RuntimeResourceDefinition resDef =
 											getContext().getResourceDefinition(resource);
-									Resource extensionResource = rdfModel.createResource();
+									Resource extensionResource = theJenaModel.createResource();
 									if (value != null) {
 										extensionResource.addProperty(
-											rdfModel.createProperty(FHIR_NS + FHIR_INDEX),
-											rdfModel.createTypedLiteral(i, XSDDatatype.XSDinteger));
+											theJenaModel.createProperty(FHIR_NS + FHIR_INDEX),
+											theJenaModel.createTypedLiteral(i, XSDDatatype.XSDinteger));
 									}
 									valueResource.addProperty(
-											rdfModel.createProperty(FHIR_NS + ELEMENT_EXTENSION),
+											theJenaModel.createProperty(FHIR_NS + ELEMENT_EXTENSION),
 											extensionResource);
 									encodeCompositeElementToStreamWriter(
 											resource,
 											extension,
-											rdfModel,
-											extensionResource,
+										extensionResource,
 											false,
 											new CompositeChildElement(resDef, theEncodeContext),
 											theEncodeContext);
@@ -454,7 +451,7 @@ public class RDFParser extends BaseParser {
 							}
 						}
 
-						rdfResource.addProperty(rdfModel.createProperty(propertyName), valueResource);
+						rdfResource.addProperty(theJenaModel.createProperty(propertyName), valueResource);
 					}
 					break;
 				}
@@ -462,29 +459,28 @@ public class RDFParser extends BaseParser {
 				case COMPOSITE_DATATYPE: {
 					if (idString != null) {
 						rdfResource.addProperty(
-								rdfModel.createProperty(idPredicate), createFhirValueBlankNode(rdfModel, idString));
+								theJenaModel.createProperty(FHIR_NS + idPredicate), createFhirValueBlankNode(idString));
 					}
-					rdfModel = encodeCompositeElementToStreamWriter(
-							resource, element, rdfModel, rdfResource, includedResource, parent, theEncodeContext);
+					encodeCompositeElementToStreamWriter(
+							resource, element, rdfResource, includedResource, parent, theEncodeContext);
 					break;
 				}
 				case CONTAINED_RESOURCE_LIST:
 				case CONTAINED_RESOURCES: {
 					if (element != null) {
 						IIdType resourceId = ((IBaseResource) element).getIdElement();
-						Resource containedResource = rdfModel.createResource();
+						Resource containedResource = theJenaModel.createResource();
 						rdfResource.addProperty(
-								rdfModel.createProperty(FHIR_NS + DOMAIN_RESOURCE_CONTAINED), containedResource);
+								theJenaModel.createProperty(FHIR_NS + DOMAIN_RESOURCE_CONTAINED), containedResource);
 						if (cardinalityIndex != null) {
 							containedResource.addProperty(
-									rdfModel.createProperty(FHIR_NS + FHIR_INDEX),
+									theJenaModel.createProperty(FHIR_NS + FHIR_INDEX),
 									cardinalityIndex.toString(),
 									XSDDatatype.XSDinteger);
 						}
 						encodeResourceToRDFStreamWriter(
 								(IBaseResource) element,
-								rdfModel,
-								true,
+							true,
 								super.fixContainedResourceId(resourceId.getValue()),
 								theEncodeContext,
 								false,
@@ -501,7 +497,7 @@ public class RDFParser extends BaseParser {
 					theEncodeContext.pushPath(resourceName, true);
 					IIdType resourceId = processResourceID(resource, theEncodeContext);
 					encodeResourceToRDFStreamWriter(
-							resource, rdfModel, false, resourceId, theEncodeContext, false, null);
+							resource, false, resourceId, theEncodeContext, false, null);
 					theEncodeContext.popPath();
 					break;
 				}
@@ -512,7 +508,7 @@ public class RDFParser extends BaseParser {
 						String value = xHtmlNode.getValueAsString();
 						String propertyName =
 								constructPredicateName(resource, childDefinition, childName, parentElement);
-						rdfResource.addProperty(rdfModel.createProperty(propertyName), value);
+						rdfResource.addProperty(theJenaModel.createProperty(propertyName), value);
 					}
 					break;
 				}
@@ -526,8 +522,6 @@ public class RDFParser extends BaseParser {
 		} finally {
 			theEncodeContext.popPath();
 		}
-
-		return rdfModel;
 	}
 
 	/**
@@ -583,9 +577,8 @@ public class RDFParser extends BaseParser {
 		return resourceId;
 	}
 
-	private Model encodeExtension(
+	private void encodeExtension(
 			final IBaseResource resource,
-			Model rdfModel,
 			Resource rdfResource,
 			final boolean containedResource,
 			final CompositeChildElement nextChildElem,
@@ -597,18 +590,17 @@ public class RDFParser extends BaseParser {
 			Integer cardinalityIndex) {
 		BaseRuntimeDeclaredChildDefinition extDef = (BaseRuntimeDeclaredChildDefinition) nextChild;
 
-		Resource childResource = rdfModel.createResource();
+		Resource childResource = theJenaModel.createResource();
 		String extensionPredicateName = constructPredicateName(resource, extDef, extDef.getElementName(), null);
-		rdfResource.addProperty(rdfModel.createProperty(extensionPredicateName), childResource);
+		rdfResource.addProperty(theJenaModel.createProperty(extensionPredicateName), childResource);
 		if (cardinalityIndex != null && cardinalityIndex > -1) {
 			childResource.addProperty(
-					rdfModel.createProperty(FHIR_NS + FHIR_INDEX), cardinalityIndex.toString(), XSDDatatype.XSDinteger);
+					theJenaModel.createProperty(FHIR_NS + FHIR_INDEX), cardinalityIndex.toString(), XSDDatatype.XSDinteger);
 		}
 
-		rdfModel = encodeChildElementToStreamWriter(
+		encodeChildElementToStreamWriter(
 				resource,
 				null,
-				rdfModel,
 				childResource,
 				nextChild,
 				nextValue,
@@ -618,14 +610,11 @@ public class RDFParser extends BaseParser {
 				nextChildElem,
 				encodeContext,
 				cardinalityIndex);
-
-		return rdfModel;
 	}
 
-	private Model encodeCompositeElementToStreamWriter(
+	private void encodeCompositeElementToStreamWriter(
 			final IBaseResource resource,
 			final IBase theElement,
-			Model rdfModel,
 			Resource rdfResource,
 			final boolean containedResource,
 			final CompositeChildElement parent,
@@ -654,17 +643,16 @@ public class RDFParser extends BaseParser {
 						RuntimeChildNarrativeDefinition child = (RuntimeChildNarrativeDefinition) nextChild;
 
 						// This is where we populate the parent of the narrative
-						Resource childResource = rdfModel.createResource();
+						Resource childResource = theJenaModel.createResource();
 
 						String propertyName = constructPredicateName(resource, child, child.getElementName(), theElement);
-						rdfResource.addProperty(rdfModel.createProperty(propertyName), childResource);
+						rdfResource.addProperty(theJenaModel.createProperty(propertyName), childResource);
 
 						String childName = nextChild.getChildNameByDatatype(child.getDatatype());
 						BaseRuntimeElementDefinition<?> type = child.getChildByName(childName);
-						rdfModel = encodeChildElementToStreamWriter(
+						encodeChildElementToStreamWriter(
 								resource,
 								theElement,
-								rdfModel,
 								childResource,
 								nextChild,
 								narrative,
@@ -690,14 +678,13 @@ public class RDFParser extends BaseParser {
 				// If it is a direct resource, we need to create a new subject for it.
 				Resource childResource = encodeResourceToRDFStreamWriter(
 						directChildResource,
-						rdfModel,
-						false,
+					false,
 						directChildResource.getIdElement(),
 						encodeContext,
 						false,
 						null);
 				String propertyName = constructPredicateName(resource, nextChild, nextChild.getElementName(), theElement);
-				rdfResource.addProperty(rdfModel.createProperty(propertyName), childResource);
+				rdfResource.addProperty(theJenaModel.createProperty(propertyName), childResource);
 
 				continue;
 			}
@@ -706,10 +693,9 @@ public class RDFParser extends BaseParser {
 				List<? extends IBase> values = nextChild.getAccessor().getValues(theElement);
 				int i = 0;
 				for (IBase containedResourceEntity : values) {
-					rdfModel = encodeChildElementToStreamWriter(
+					encodeChildElementToStreamWriter(
 							resource,
 							theElement,
-							rdfModel,
 							rdfResource,
 							nextChild,
 							containedResourceEntity,
@@ -752,9 +738,8 @@ public class RDFParser extends BaseParser {
 					String extensionUrl = getExtensionUrl(nextChild.getExtensionUrl());
 
 					if (extensionUrl != null && !nextChildSpecificName.equals(EXTENSION)) {
-						rdfModel = encodeExtension(
+						encodeExtension(
 								resource,
-								rdfModel,
 								rdfResource,
 								containedResource,
 								nextChildElem,
@@ -772,9 +757,8 @@ public class RDFParser extends BaseParser {
 								continue;
 							}
 						}
-						rdfModel = encodeExtension(
+						encodeExtension(
 								resource,
-								rdfModel,
 								rdfResource,
 								containedResource,
 								nextChildElem,
@@ -792,20 +776,19 @@ public class RDFParser extends BaseParser {
 								&& childDef.getChildType() != PRIMITIVE_XHTML_HL7ORG
 								&& childDef.getChildType() != PRIMITIVE_XHTML
 								&& childDef.getChildType() != ID_DATATYPE) {
-							Resource childResource = rdfModel.createResource();
+							Resource childResource = theJenaModel.createResource();
 
 							String propertyName = constructPredicateName(resource, nextChild, nextChildSpecificName, nextValue);
-							rdfResource.addProperty(rdfModel.createProperty(propertyName), childResource);
+							rdfResource.addProperty(theJenaModel.createProperty(propertyName), childResource);
 							if (cardinalityIndex != null && cardinalityIndex > -1) {
 								childResource.addProperty(
-										rdfModel.createProperty(FHIR_NS + FHIR_INDEX),
+										theJenaModel.createProperty(FHIR_NS + FHIR_INDEX),
 										cardinalityIndex.toString(),
 										XSDDatatype.XSDinteger);
 							}
-							rdfModel = encodeChildElementToStreamWriter(
+							encodeChildElementToStreamWriter(
 									resource,
 									theElement,
-									rdfModel,
 									childResource,
 									nextChild,
 									nextValue,
@@ -816,10 +799,9 @@ public class RDFParser extends BaseParser {
 									encodeContext,
 									cardinalityIndex);
 						} else {
-							rdfModel = encodeChildElementToStreamWriter(
+							encodeChildElementToStreamWriter(
 									resource,
 									theElement,
-									rdfModel,
 									rdfResource,
 									nextChild,
 									nextValue,
@@ -834,22 +816,21 @@ public class RDFParser extends BaseParser {
 				}
 			}
 		}
-		return rdfModel;
 	}
 
-	private <T extends IBaseResource> T parseResource(Class<T> resourceType, Model rdfModel) {
+	private <T extends IBaseResource> T parseResource(Class<T> resourceType) {
 		// jsonMode of true is passed in so that the xhtml parser state behaves as expected
 		// Push PreResourceState
 		ParserState<T> parserState =
 				ParserState.getPreResourceInstance(this, resourceType, getContext(), true, getErrorHandler());
-		return parseRootResource(rdfModel, parserState, resourceType);
+		return parseRootResource(parserState, resourceType);
 	}
 
-	private <T> T parseRootResource(Model rdfModel, ParserState<T> parserState, Class<T> resourceType) {
+	private <T> T parseRootResource(ParserState<T> parserState, Class<T> resourceType) {
 		logger.trace("Entering parseRootResource with state: {}", parserState);
 
-		StmtIterator rootStatementIterator = rdfModel.listStatements(
-				null, rdfModel.getProperty(FHIR_NS + NODE_ROLE), rdfModel.getProperty(FHIR_NS + TREE_ROOT));
+		StmtIterator rootStatementIterator = theJenaModel.listStatements(
+				null, theJenaModel.getProperty(FHIR_NS + NODE_ROLE), theJenaModel.getProperty(FHIR_NS + TREE_ROOT));
 
 		Resource rootResource;
 		String fhirResourceType, fhirTypeString;
@@ -955,7 +936,7 @@ public class RDFParser extends BaseParser {
 					parserState.enteringNewElement(
 							FHIR_NS,
 							resourceObject
-									.getProperty(resourceObject.getModel().createProperty(RDF.type.getURI()))
+									.getProperty(theJenaModel.createProperty(RDF.type.getURI()))
 									.getObject()
 									.toString()
 									.replace(FHIR_NS, ""));
@@ -1025,10 +1006,10 @@ public class RDFParser extends BaseParser {
 	private <T> void processExtension(ParserState<T> parserState, RDFNode statementObject, boolean isModifier) {
 		logger.trace("Entering processExtension with state: {}", parserState);
 		Resource resource = statementObject.asResource();
-		Statement urlProperty = resource.getProperty(resource.getModel().createProperty(FHIR_NS + EXTENSION_URL));
+		Statement urlProperty = resource.getProperty(theJenaModel.createProperty(FHIR_NS + EXTENSION_URL));
 		Resource urlPropertyResource = urlProperty.getObject().asResource();
 		String extensionUrl = urlPropertyResource
-				.getProperty(resource.getModel().createProperty(FHIR_NS + VALUE))
+				.getProperty(theJenaModel.createProperty(FHIR_NS + VALUE))
 				.getObject()
 				.asLiteral()
 				.getString();
