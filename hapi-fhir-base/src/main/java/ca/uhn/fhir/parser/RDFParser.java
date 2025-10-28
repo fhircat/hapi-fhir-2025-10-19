@@ -111,7 +111,7 @@ public class RDFParser extends BaseParser {
 	public static final String EXTENSION = "extension";
 	public static final String CONTAINED = "contained";
 	public static final String MODIFIER_EXTENSION = "modifierExtension";
-	private final Map<Class, String> classToFhirTypeMap = new HashMap<>();
+	private final Map<Class<?>, String> classToFhirTypeMap = new HashMap<>();
 
 	private final Lang lang;
 	private Model theJenaModel;
@@ -232,13 +232,12 @@ public class RDFParser extends BaseParser {
 			} else {
 
 				String resourceUri = IRIs.resolve(
-								uriBase, resource.getIdElement().toUnqualified().toString())
-						.toString();
+								uriBase, resource.getIdElement().toUnqualified().toString());
 				parentResource = theJenaModel.getResource(resourceUri);
 			}
 			// If the resource already exists and has statements, return that existing resource.
 			if (parentResource != null
-					&& parentResource.listProperties().toList().size() > 0) {
+					&& !parentResource.listProperties().toList().isEmpty()) {
 				return parentResource;
 			} else if (parentResource == null) {
 				return null;
@@ -307,7 +306,7 @@ public class RDFParser extends BaseParser {
 	/**
 	 * Builds the predicate name based on field definition
 	 *
-	 * @param childName  childName which been massaged for different data types
+	 * @param localName  childName which been massaged for different data types
 	 * @return Property  Jena Property for the passed predicate name
 	 */
 	private Property constructFhirPredicate(String localName) {
@@ -359,7 +358,6 @@ public class RDFParser extends BaseParser {
 
 	private void encodeChildElementToStreamWriter(
 			final IBaseResource resource,
-			IBase parentElement,
 			Resource rdfResource,
 			final BaseRuntimeChildDefinition childDefinition,
 			final IBase element,
@@ -406,13 +404,11 @@ public class RDFParser extends BaseParser {
 
 							Property property =
 									constructPredicate(resource, childDefinition, childName);
-							if (element != null) {
-								XSDDatatype dataType = getXSDDataTypeForFhirType(element.fhirType(), encodedValue);
-								rdfResource.addProperty(
-										property,
-										this.createFhirValueBlankNode(
-											encodedValue, dataType, cardinalityIndex));
-							}
+							XSDDatatype dataType = getXSDDataTypeForFhirType(element.fhirType(), encodedValue);
+							rdfResource.addProperty(
+									property,
+									this.createFhirValueBlankNode(
+										encodedValue, dataType, cardinalityIndex));
 						}
 					}
 					break;
@@ -434,7 +430,7 @@ public class RDFParser extends BaseParser {
 						if (!hasNoExtensions(pd)) {
 							IBaseHasExtensions hasExtension = (IBaseHasExtensions) pd;
 							if (hasExtension.getExtension() != null
-									&& hasExtension.getExtension().size() > 0) {
+									&& !hasExtension.getExtension().isEmpty()) {
 								int i = 0;
 								for (IBaseExtension extension : hasExtension.getExtension()) {
 									RuntimeResourceDefinition resDef =
@@ -608,8 +604,7 @@ public class RDFParser extends BaseParser {
 
 		encodeChildElementToStreamWriter(
 				resource,
-				null,
-				childResource,
+			childResource,
 				nextChild,
 				nextValue,
 				childName,
@@ -633,7 +628,7 @@ public class RDFParser extends BaseParser {
 
 			BaseRuntimeChildDefinition nextChild = nextChildElem.getDef();
 
-			if (nextChild instanceof RuntimeChildNarrativeDefinition) {
+			if (nextChild instanceof RuntimeChildNarrativeDefinition child) {
 				INarrativeGenerator gen = getContext().getNarrativeGenerator();
 				if (gen != null) {
 					INarrative narrative;
@@ -648,7 +643,6 @@ public class RDFParser extends BaseParser {
 					if (narrative.isEmpty()) {
 						gen.populateResourceNarrative(getContext(), resource);
 					} else {
-						RuntimeChildNarrativeDefinition child = (RuntimeChildNarrativeDefinition) nextChild;
 
 						// This is where we populate the parent of the narrative
 						Resource childResource = theJenaModel.createResource();
@@ -660,8 +654,7 @@ public class RDFParser extends BaseParser {
 						BaseRuntimeElementDefinition<?> type = child.getChildByName(childName);
 						encodeChildElementToStreamWriter(
 								resource,
-								theElement,
-								childResource,
+							childResource,
 								nextChild,
 								narrative,
 								childName,
@@ -703,7 +696,6 @@ public class RDFParser extends BaseParser {
 				for (IBase containedResourceEntity : values) {
 					encodeChildElementToStreamWriter(
 							resource,
-							theElement,
 							rdfResource,
 							nextChild,
 							containedResourceEntity,
@@ -796,8 +788,7 @@ public class RDFParser extends BaseParser {
 							}
 							encodeChildElementToStreamWriter(
 									resource,
-									theElement,
-									childResource,
+								childResource,
 									nextChild,
 									nextValue,
 									nextChildSpecificName,
@@ -809,8 +800,7 @@ public class RDFParser extends BaseParser {
 						} else {
 							encodeChildElementToStreamWriter(
 									resource,
-									theElement,
-									rdfResource,
+								rdfResource,
 									nextChild,
 									nextValue,
 									nextChildSpecificName,
@@ -1031,7 +1021,8 @@ public class RDFParser extends BaseParser {
 				continue; // null if the predicate is in ignoredPredicates, e.g. rdf:type
 			}
 			switch (predicateAttributeName) {
-				case "url" -> {continue;}
+				case "url" ->
+					{ }
 				case EXTENSION ->
 					processExtension(parserState, statement.getObject(), false);
 				case MODIFIER_EXTENSION ->
