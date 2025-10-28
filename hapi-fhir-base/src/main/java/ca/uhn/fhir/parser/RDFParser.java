@@ -902,12 +902,10 @@ public class RDFParser extends BaseParser {
 			} else {
 				String predicateAttributeName = extractAttributeNameFromPredicate(statement);
 				if (predicateAttributeName != null) {
-					if (predicateAttributeName.equals(MODIFIER_EXTENSION)) {
-						processExtension(parserState, object, true);
-					} else if (predicateAttributeName.equals(EXTENSION)) {
-						processExtension(parserState, object, false);
-					} else {
-						processStatementObject(parserState, predicateAttributeName, object);
+					switch (predicateAttributeName) {
+						case MODIFIER_EXTENSION -> processExtension(parserState, object, true);
+						case EXTENSION -> processExtension(parserState, object, false);
+						default -> processStatementObject(parserState, predicateAttributeName, object);
 					}
 				}
 			}
@@ -978,10 +976,11 @@ public class RDFParser extends BaseParser {
 						// Otherwise, process it as a net-new node
 						predicateAttributeName = extractAttributeNameFromPredicate(objectProperty);
 						if (predicateAttributeName != null) {
-							if (predicateAttributeName.equals(EXTENSION)) {
-								processExtension(parserState, objectProperty.getObject(), false);
-							} else if (predicateAttributeName.equals(MODIFIER_EXTENSION)) {
-								processExtension(parserState, objectProperty.getObject(), true);
+							switch (predicateAttributeName) {
+								case EXTENSION -> processExtension(parserState, objectProperty.getObject(), false);
+								case MODIFIER_EXTENSION ->
+									processExtension(parserState, objectProperty.getObject(), true);
+
 							/*
 							Here I was trying to emulate JsonParser.parseAlternates's special treatment for ids.
 							This occurs *only* in Alternates and I can only confirm to be tested on alternates of a primitive datatype.
@@ -999,8 +998,8 @@ public class RDFParser extends BaseParser {
 									getErrorHandler() // .incorrect???Type
 								}
 							*/
-							} else {
-								processStatementObject(parserState, predicateAttributeName, objectProperty.getObject());
+								default ->
+									processStatementObject(parserState, predicateAttributeName, objectProperty.getObject());
 							}
 						}
 					}
@@ -1040,26 +1039,29 @@ public class RDFParser extends BaseParser {
 		List<Statement> extensionStatements = resource.listProperties().toList();
 		extensionStatements.sort(new FhirIndexStatementComparator());
 		for (Statement statement : extensionStatements) {
-			String predicateAttributeName = extractAttributeNameFromPredicate(statement); // null if ignored predicate
-			if ("url".equals(predicateAttributeName) || predicateAttributeName == null) {
-				continue;
-			} else if (predicateAttributeName.equals(EXTENSION)) {
-				processExtension(parserState, statement.getObject(), false);
-			} else if (predicateAttributeName.equals(MODIFIER_EXTENSION)) {
-				processExtension(parserState, statement.getObject(), true);
-			} else {
-				/* We *could* look at the type and know to expect a literal:
-				BaseRuntimeElementDefinition<?> target = getContext()
-						.getRuntimeChildUndeclaredExtensionDefinition()
-						.getChildByName(extensionValueType);
-				if (target.getChildType().equals(ID_DATATYPE)
-						|| target.getChildType().equals(PRIMITIVE_DATATYPE)) {
-					expectFhirV = true;
-				}
-				but that seems more like validation than parsing.
-				 */
-				// parseResource or processStatementObject both work. Which is better?
-				parseResource(parserState, predicateAttributeName, statement.getObject().asResource());
+			String predicateAttributeName = extractAttributeNameFromPredicate(statement);
+			if (predicateAttributeName == null) {
+				continue; // null if the predicate is in ignoredPredicates, e.g. rdf:type
+			}
+			switch (predicateAttributeName) {
+				case "url" -> {continue;}
+				case EXTENSION ->
+					processExtension(parserState, statement.getObject(), false);
+				case MODIFIER_EXTENSION ->
+					processExtension(parserState, statement.getObject(), true);
+				default ->
+					/* We *could* look at the type and know to expect a literal:
+					BaseRuntimeElementDefinition<?> target = getContext()
+							.getRuntimeChildUndeclaredExtensionDefinition()
+							.getChildByName(extensionValueType);
+					if (target.getChildType().equals(ID_DATATYPE)
+							|| target.getChildType().equals(PRIMITIVE_DATATYPE)) {
+						expectFhirV = true;
+					}
+					but that seems more like validation than parsing.
+					 */
+					// parseResource or processStatementObject both work. Which is better?
+					processStatementObject(parserState, predicateAttributeName, statement.getObject().asResource());
 			}
 		}
 		parserState.endingElement();
