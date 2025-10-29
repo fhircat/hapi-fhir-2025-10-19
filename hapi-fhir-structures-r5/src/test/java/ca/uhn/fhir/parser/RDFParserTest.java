@@ -56,11 +56,13 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.core.io.support.ResourcePatternResolver;
 
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -115,6 +117,10 @@ public class RDFParserTest extends BaseTest {
 		if (referenceResource == null)
 			return;
 		String referenceJson = serializeJson(ourCtx, referenceResource);
+		IBaseResource viaJsonResource = parseJson(new ByteArrayInputStream(referenceJson.getBytes(StandardCharsets.UTF_8)));
+		if (!((Base)viaJsonResource).equalsDeep((Base)referenceResource)) { // can't count on JSON for reference
+			return;
+		}
 
 		// Perform ShEx validation on RDF
 		String turtleString = serializeRdf(ourCtx, referenceResource);
@@ -139,15 +145,77 @@ public class RDFParserTest extends BaseTest {
 
 	@SneakyThrows
 	@Test
-	public void testOne() {
+	public void testOneRoundTrip() {
 		ClassLoader cl = RDFParserTest.class.getClassLoader();
 		ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(cl);
 		Resource resource = resolver.getResource("classpath:rdf-test-input/"
 //			+ "codesystem-discriminator-type"
-			+ "codesystem-extension-toy"
+//			+ "codesystem-extension-toy"
+//			+ "questionnaireresponse-example-f201-lifelines"
+//			+ "questionnaireresponse-extension-toy"
 //			+ "Requirements-example1"
-			+ ".json") ;
+//			+ "Requirements-toy"
+//			+ "patient-example-sex-and-gender"
+			+ "patient-extension-toy2"
+			+ ".json");
 		testRDFRoundTrip(resource.getFile().getPath());
+	}
+
+	@SneakyThrows
+	@Test
+	public void genJson() {
+		ClassLoader cl = RDFParserTest.class.getClassLoader();
+		ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(cl);
+		Resource resource = resolver.getResource("classpath:rdf-test-input/"
+//			+ "codesystem-discriminator-type"
+//			+ "codesystem-extension-toy"
+//			+ "questionnaireresponse-example-f201-lifelines"
+//			+ "questionnaireresponse-extension-toy"
+//			+ "Requirements-example1"
+			+ "Requirements-toy"
+			+ ".json") ;
+//		testRDFRoundTrip(resource.getFile().getPath());
+		String referenceFilePath = resource.getFile().getPath();
+		String referenceFileName = referenceFilePath.substring(referenceFilePath.lastIndexOf("/")+1);
+		IBaseResource referenceResource = null;
+		try {
+			referenceResource = parseJson(new FileInputStream(referenceFilePath));
+		} catch (Exception e) {
+			System.err.println("Failed to parse reference resource: " + referenceFilePath + " (" + e.getMessage() + ")");
+		}
+		if (referenceResource == null)
+			return;
+		String referenceJson = serializeJson(ourCtx, referenceResource);
+		System.out.println("referenceJson: " + referenceJson);
+	}
+
+	@SneakyThrows
+	@Test
+	public void genRdf() {
+		ClassLoader cl = RDFParserTest.class.getClassLoader();
+		ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(cl);
+		Resource resource = resolver.getResource("classpath:rdf-test-input/"
+//			+ "codesystem-discriminator-type"
+//			+ "codesystem-extension-toy"
+//			+ "questionnaireresponse-example-f201-lifelines"
+//			+ "questionnaireresponse-extension-toy"
+//			+ "Requirements-example1"
+			+ "Requirements-toy"
+			+ ".json") ;
+//		testRDFRoundTrip(resource.getFile().getPath());
+		String referenceFilePath = resource.getFile().getPath();
+		String referenceFileName = referenceFilePath.substring(referenceFilePath.lastIndexOf("/")+1);
+		IBaseResource referenceResource = null;
+		try {
+			referenceResource = parseJson(new FileInputStream(referenceFilePath));
+		} catch (Exception e) {
+			System.err.println("Failed to parse reference resource: " + referenceFilePath + " (" + e.getMessage() + ")");
+		}
+		if (referenceResource == null)
+			return;
+		String turtleString = serializeRdf(ourCtx, referenceResource);
+
+		System.out.println("turtleString: " + turtleString);
 	}
 
 	/**
@@ -203,7 +271,7 @@ public class RDFParserTest extends BaseTest {
 		IParser rdfParser = ourCtx.newRDFParser();
 		rdfParser.setStripVersionsFromReferences(false);
 		rdfParser.setServerBaseUrl("http://a.example/fhir/");
-		String ret = rdfParser.encodeResourceToString(resource);
+		String ret = rdfParser.encodeResourceToString(resource); // calls doEncodeResourceToWriter(resource, Writer, EncodeContext)
 		assertNotNull(ret);
 		return ret;
 	}
